@@ -406,6 +406,13 @@ This project demonstrates **production-grade test automation** with:
 
 ---
 
-**Last Updated**: January 2, 2026  
-**Maintained by**: Your Team  
+**Last Updated**: January 14, 2026  
+**Maintained by**: aniket-automation 
 **Status**: ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+## Author
+Aniket Karkade
+
+## About
+Playwright automation framework with CI/CD using GitHub Actions.
+Customized and extended for learning and real-world QA automation scenarios.
+
