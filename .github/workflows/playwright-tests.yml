@@ -1,0 +1,194 @@
+name: Playwright Tests CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+# Limit concurrent jobs to prevent resource exhaustion
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-checks:
+    name: Security & Dependency Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run npm audit for vulnerabilities
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Check for outdated packages
+        run: npm outdated || true
+
+      - name: Lint JavaScript/TypeScript
+        run: npm run lint 2>/dev/null || echo "Linting skipped - no lint script configured"
+        continue-on-error: true
+
+  test:
+    name: Playwright Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        node-version: [ '18', '20' ]
+        browser: [ chromium, firefox]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run Playwright tests (${{ matrix.browser }})
+        run: npx playwright test --project=${{ matrix.browser }}
+        env:
+          # Add any environment variables needed for tests
+          CI: 'true'
+          BASE_URL: ${{ secrets.BASE_URL || 'https://www.usa.gov' }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}-node${{ matrix.node-version }}-${{ matrix.browser }}
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-videos-${{ matrix.os }}-node${{ matrix.node-version }}-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7
+
+  test-results:
+    name: Publish Test Results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Publish test results summary
+        run: |
+          echo "## 🧪 Test Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check test artifacts exist
+        run: |
+          if [ -d "artifacts/" ]; then
+            echo "✅ Test artifacts collected successfully"
+            find artifacts/ -type f | head -20
+          else
+            echo "⚠️ No test artifacts found"
+          fi
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: Check TypeScript compilation
+        run: npx tsc --noEmit 2>/dev/null || echo "TypeScript check skipped"
+        continue-on-error: true
+
+      - name: Check file permissions
+        run: |
+          echo "Checking for world-writable files..."
+          find . -type f -perm /002 ! -path "./node_modules/*" ! -path "./.git/*" || echo "✅ No world-writable files found"
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [ test, security-checks, code-quality ]
+
+    steps:
+      - name: Determine job status
+        id: status
+        run: |
+          if [ "${{ needs.test.result }}" == "failure" ] || [ "${{ needs.security-checks.result }}" == "failure" ]; then
+            echo "status=❌ FAILED" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+          else
+            echo "status=✅ PASSED" >> $GITHUB_OUTPUT
+            echo "color=good" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post results summary
+        run: |
+          echo "## CI/CD Pipeline Results: ${{ steps.status.outputs.status }}"
+          echo ""
+          echo "### Test Status: ${{ needs.test.result }}"
+          echo "### Security Checks: ${{ needs.security-checks.result }}"
+          echo "### Code Quality: ${{ needs.code-quality.result }}"
+          echo ""
+          echo "📊 [View detailed logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"

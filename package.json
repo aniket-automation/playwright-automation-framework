@@ -1,0 +1,26 @@
+{
+  "name": "playwright_ai_llm_ci_cd_pipeline_usagov",
+  "version": "1.0.0",
+  "description": "USA.gov Test Automation Framework",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
+  },
+  "keywords": [
+    "testing",
+    "playwright",
+    "automation",
+    "usa.gov"
+  ],
+  "author": "QA Team",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/mcp": "^0.0.54",
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^25.0.3"
+  }
+}
