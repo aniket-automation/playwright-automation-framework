@@ -1,4 +1,4 @@
-# Playwright AI LLM CI/CD Pipeline - USA.gov
+# Playwright AI LLM CI/CD Pipeline - USA.gov.
 
 ![Playwright Tests](https://img.shields.io/badge/Playwright-46-brightgreen)
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-success)
